@@ -1,8 +1,8 @@
 /**
- * Honeylog Cloudflare Worker client.
+ * Cloudflare Worker for Honeylog pageviews.
  *
- * This worker proxies traffic to the current origin by default and sends one Honeylog
- * event per request. If ORIGIN_URL is provided, requests are proxied there instead.
+ * Uses Cloudflare's configured origin unless ORIGIN_URL is set, then sends one
+ * Honeylog event after each request.
  * Required secrets/env:
  * - HONEYLOG_API_URL
  * - HONEYLOG_INGESTION_SECRET
@@ -17,13 +17,14 @@
  */
 
 const textEncoder = new TextEncoder();
+const defaultSkipPathRegex = "\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf)$";
 
 export default {
   async fetch(request, env, ctx) {
     validateRequiredEnv(env);
 
     const incomingUrl = new URL(request.url);
-    const skipRegex = compileRegex(env.HONEYLOG_SKIP_PATH_REGEX);
+    const skipRegex = compileRegex(env.HONEYLOG_SKIP_PATH_REGEX || defaultSkipPathRegex);
     const shouldTrack = !skipRegex || !skipRegex.test(incomingUrl.pathname);
     const startedAt = Date.now();
 
@@ -56,13 +57,13 @@ function resolveUpstreamRequest(request, incomingUrl, originUrlRaw, honeylogApiU
 
   const originUrl = safeParseUrl(originUrlRaw);
   if (!originUrl) {
-    console.error("Invalid ORIGIN_URL; falling back to default origin fetch.");
+    console.error("Invalid ORIGIN_URL; using Cloudflare origin.");
     return request;
   }
 
   const honeylogApiUrl = safeParseUrl(honeylogApiUrlRaw);
   if (honeylogApiUrl && sameHost(originUrl, honeylogApiUrl)) {
-    console.error("ORIGIN_URL points to Honeylog API host; falling back to default origin fetch.");
+    console.error("ORIGIN_URL matches HONEYLOG_API_URL host; using Cloudflare origin.");
     return request;
   }
 
@@ -197,7 +198,7 @@ function scheduleHoneylogSend(event, env, ctx) {
   if (ctx && typeof ctx.waitUntil === "function") {
     ctx.waitUntil(task);
   } else {
-    // Fallback for non-Worker runtimes: do not block response delivery.
+    // Non-Worker runtimes should not block response delivery.
     void task;
   }
 }
@@ -227,8 +228,7 @@ async function sendBatchToHoneylog(events, env) {
   });
 
   if (!response.ok) {
-    const responseText = await safeReadText(response);
-    throw new Error(`Honeylog returned ${response.status}: ${responseText}`);
+    throw new Error(`Honeylog returned HTTP ${response.status}`);
   }
 }
 
@@ -285,11 +285,17 @@ function compileRegex(value) {
     return null;
   }
   try {
-    return new RegExp(String(value));
+    return new RegExp(normalizeRegexPattern(value), "i");
   } catch (err) {
     console.error("Invalid HONEYLOG_SKIP_PATH_REGEX, tracking all paths:", err);
     return null;
   }
+}
+
+function normalizeRegexPattern(value) {
+  // Cloudflare text inputs need "\\.", while JSON examples show "\\\\.".
+  // Accept both so copied dashboard values still filter static assets.
+  return String(value).trim().replaceAll("\\\\.", "\\.");
 }
 
 function extractClientIp(request) {
@@ -350,12 +356,4 @@ function normalizedPort(url) {
     return "443";
   }
   return "";
-}
-
-async function safeReadText(response) {
-  try {
-    return await response.text();
-  } catch (_err) {
-    return "";
-  }
 }

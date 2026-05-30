@@ -1,93 +1,84 @@
-# Honeylog Cloudflare Worker Client
+# Honeylog Cloudflare Worker
 
-This client proxies requests to your current origin by default and asynchronously sends one Honeylog event per request.
-If `ORIGIN_URL` is set, it proxies there instead.
+Send Honeylog pageview events from a site that uses Cloudflare. The Worker passes visitors through to your normal site and sends one Honeylog event in the background.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FSecondBreakfast-io%2Fhoneylog-cloudflare-worker)
+## Cloudflare Dashboard Setup
 
-## Files
+This setup uses only the Cloudflare dashboard. You do not need GitHub, GitLab, or the command line.
 
-- `worker.js`: Worker entrypoint
-- `wrangler.jsonc`: Deploy to Cloudflare / Wrangler configuration
-- `.dev.vars.example`: required secret names for Cloudflare's deploy flow
-- `package.json`: Cloudflare binding descriptions
+### 1. Create the Worker
 
-## Required env vars
+1. Open Cloudflare.
+2. Go to **Workers & Pages**.
+3. Select **Create application**.
+4. Select **Create Worker**.
+5. Name it `honeylog-worker`.
+6. Select **Deploy**.
 
-- `HONEYLOG_API_URL`: Honeylog ingestion endpoint (example: `https://ingest.example.com/api/events`)
-- `HONEYLOG_INGESTION_SECRET`: secret used for `X-Honeylog-Signature` HMAC
+### 2. Paste the Worker code
 
-## Optional env vars
+1. Open the Worker you just created.
+2. Select **Edit Code** or **Quick Edit**.
+3. Delete the starter code.
+4. Open `worker.js` from this repository. If you are viewing it on GitHub, select **Raw** first.
+5. Copy the full file contents and paste them into Cloudflare.
+6. Select **Deploy**.
 
-- `ORIGIN_URL`: optional upstream override URL (example: `https://origin.example.com`)
-- `HONEYLOG_API_KEY`: sent as `Authorization: Bearer ...`
-- `HONEYLOG_SITE_DOMAIN`: force site domain in payload/header (defaults to request hostname)
-- `HONEYLOG_SITE_SCHEME`: event URL scheme (default: `https`)
-- `HONEYLOG_EVENT_NAME`: event name (default: `pageview`)
-- `HONEYLOG_SKIP_PATH_REGEX`: skip matching paths (example: `\\.(?:css|js|png|jpg|svg|ico)$`)
+### 3. Add Honeylog values
 
-## Deploy to Cloudflare
+In Cloudflare, open the Honeylog Worker and go to **Settings > Variables and Secrets**.
 
-Use the button above to install the Worker through Cloudflare's hosted flow. Cloudflare handles account authentication, repository setup, and deployment. Honeylog does not need the customer's Cloudflare API key.
+Select **Add** and add these as plain text variables:
 
-This directory is intended to be published as a standalone public repository, for example:
+- `HONEYLOG_API_URL`: copy this from Honeylog.
+- `HONEYLOG_SITE_DOMAIN`: your site domain, for example `example.com`.
+- `HONEYLOG_SITE_SCHEME`: use `https` unless your site uses HTTP.
+- `HONEYLOG_EVENT_NAME`: use `pageview`.
+- `HONEYLOG_SKIP_PATH_REGEX`: use `\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf)$`. Use one backslash in the Cloudflare dashboard, not `\\.`.
+- `ORIGIN_URL`: add this only if Honeylog support tells you to set it.
 
-```text
-https://github.com/SecondBreakfast-io/honeylog-cloudflare-worker
-```
+Add these as secrets:
 
-Cloudflare Deploy buttons require a public GitHub or GitLab repository. If this code remains inside a monorepo, the button can target a subdirectory, but the subdirectory must be fully isolated with its own Worker config and dependencies.
+- `HONEYLOG_INGESTION_SECRET`: copy this from Honeylog.
+- `HONEYLOG_API_KEY`: add this only if Honeylog gives you one.
 
-During setup, replace the example values in `wrangler.jsonc` with the values shown in the Honeylog dashboard:
+Select **Deploy** to save the values.
 
-```jsonc
-{
-  "vars": {
-    "HONEYLOG_API_URL": "https://ingest.example.com/api/events",
-    "HONEYLOG_SITE_DOMAIN": "example.com",
-    "HONEYLOG_SITE_SCHEME": "https",
-    "HONEYLOG_EVENT_NAME": "pageview",
-    "HONEYLOG_SKIP_PATH_REGEX": "\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf)$"
-  }
-}
-```
+Honeylog does not need your Cloudflare password or Cloudflare API key. Do not paste your Cloudflare API key into Honeylog.
 
-Set `HONEYLOG_INGESTION_SECRET` when Cloudflare prompts for secrets. Set `HONEYLOG_API_KEY` only if the Honeylog site requires bearer authentication.
+### 4. Disable the workers.dev URL
 
-After deployment, add a Worker route in Cloudflare:
+Cloudflare may create a public `workers.dev` URL when the Worker is created. Honeylog does not need this URL.
+
+In Cloudflare, open the Honeylog Worker and go to **Settings > Domains & Routes**. Find the `workers.dev` route and select **Disable**. Some Cloudflare accounts may show this under the Worker's **Domains** tab.
+
+### 5. Add a Cloudflare route
+
+The Worker starts handling traffic on your site after you add a route.
+
+In Cloudflare, open the Honeylog Worker, then go to **Settings > Domains & Routes > Add > Route**.
+
+Start with a test route:
 
 ```text
 example.com/honeylog-test/*
 ```
 
-Promote to the full-site route only after Honeylog verifies the test route:
+After Honeylog confirms events from the test route, switch to the full-site route:
 
 ```text
 example.com/*
 ```
 
-## Manual Wrangler fallback
+## Troubleshooting
 
-```toml
-name = "honeylog-worker"
-main = "worker.js"
-compatibility_date = "2026-03-15"
+- Cloudflare asks for GitHub or GitLab: go back to **Workers & Pages** and create the Worker manually with the dashboard steps above.
+- Honeylog shows no events: check that the Cloudflare route is active and that `HONEYLOG_SITE_DOMAIN` matches the site in Honeylog.
+- Your site shows Honeylog API responses: remove `ORIGIN_URL`, or set it to your website origin instead of the Honeylog API URL.
 
-[vars]
-HONEYLOG_API_URL = "https://ingest.example.com/api/events"
-HONEYLOG_SITE_DOMAIN = "example.com"
-HONEYLOG_EVENT_NAME = "pageview"
-HONEYLOG_SKIP_PATH_REGEX = "\\.(?:css|js|png|jpg|svg|ico)$"
+## Files
 
-# add secret with:
-# wrangler secret put HONEYLOG_INGESTION_SECRET
-# optional:
-# wrangler secret put HONEYLOG_API_KEY
-```
-
-## Notes
-
-- Signature format matches backend middleware: `sha256_hmac(secret, "<unix_timestamp>.<raw_json_body>")`.
-- Header `X-Honeylog-Site` and payload domain `d` are aligned to avoid domain-mismatch rejection.
-- If pages start showing your ingestion server responses, `ORIGIN_URL` is pointing to the wrong host. Remove it (default origin) or set it to your real website origin.
-- `bytes_sent` uses `Content-Length` when present. For streamed/compressed responses without that header, the Worker counts response body chunks and sends the Honeylog event after the body finishes.
+- `worker.js`: Worker code
+- `wrangler.jsonc`: Worker configuration
+- `.dev.vars.example`: local secret placeholders
+- `package.json`: Cloudflare setup text

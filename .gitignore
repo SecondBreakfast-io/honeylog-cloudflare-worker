@@ -1,4 +1,16 @@
 node_modules/
 .wrangler/
 .dev.vars
+.env
+.env.*
+!.env.example
+!.dev.vars.example
+.npmrc
+*.local
+*.log
+*.key
+*.pem
+*.p12
+*.pfx
+.DS_Store
 dist/

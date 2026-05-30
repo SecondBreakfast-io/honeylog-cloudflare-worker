@@ -3,7 +3,7 @@
   "name": "honeylog-worker",
   "main": "worker.js",
   "compatibility_date": "2026-05-27",
-  "workers_dev": true,
+  "workers_dev": false,
   "vars": {
     "HONEYLOG_API_URL": "https://ingest.example.com/api/events",
     "HONEYLOG_SITE_DOMAIN": "example.com",
