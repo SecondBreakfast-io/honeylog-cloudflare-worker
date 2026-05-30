@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "honeylog-worker",
+  "main": "worker.js",
+  "compatibility_date": "2026-05-27",
+  "workers_dev": true,
+  "vars": {
+    "HONEYLOG_API_URL": "https://ingest.example.com/api/events",
+    "HONEYLOG_SITE_DOMAIN": "example.com",
+    "HONEYLOG_SITE_SCHEME": "https",
+    "HONEYLOG_EVENT_NAME": "pageview",
+    "HONEYLOG_SKIP_PATH_REGEX": "\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf)$"
+  }
+}
