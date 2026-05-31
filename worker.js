@@ -17,14 +17,13 @@
  */
 
 const textEncoder = new TextEncoder();
-const defaultSkipPathRegex = "\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf)$";
 
 export default {
   async fetch(request, env, ctx) {
     validateRequiredEnv(env);
 
     const incomingUrl = new URL(request.url);
-    const skipRegex = compileRegex(env.HONEYLOG_SKIP_PATH_REGEX || defaultSkipPathRegex);
+    const skipRegex = compileRegex(env.HONEYLOG_SKIP_PATH_REGEX);
     const shouldTrack = !skipRegex || !skipRegex.test(incomingUrl.pathname);
     const startedAt = Date.now();
 
@@ -103,6 +102,11 @@ function buildEvent(request, response, env, startedAtMs) {
   const userAgent = request.headers.get("user-agent");
   if (userAgent) {
     event.ua = userAgent;
+  }
+
+  const acceptLanguage = request.headers.get("accept-language");
+  if (acceptLanguage) {
+    event.headers = { "accept-language": acceptLanguage };
   }
 
   const ip = extractClientIp(request);
