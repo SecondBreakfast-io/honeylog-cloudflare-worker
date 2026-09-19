@@ -2,6 +2,8 @@
 
 Send Honeylog pageview events from a site that uses Cloudflare. The Worker passes visitors through to your normal site and sends one Honeylog event in the background.
 
+This Worker sends each event individually. It does not batch events or use Durable Objects.
+
 ## Cloudflare Dashboard Setup
 
 This setup uses only the Cloudflare dashboard. You do not need GitHub, GitLab, or the command line.
@@ -34,7 +36,7 @@ Select **Add** and add these as plain text variables:
 - `HONEYLOG_SITE_DOMAIN`: your site domain, for example `example.com`.
 - `HONEYLOG_SITE_SCHEME`: use `https` unless your site uses HTTP.
 - `HONEYLOG_EVENT_NAME`: use `pageview`.
-- `HONEYLOG_SKIP_PATH_REGEX`: use `\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf)$`. Use one backslash in the Cloudflare dashboard, not `\\.`.
+- `HONEYLOG_SKIP_PATH_REGEX`: optional. If you add it, use `\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|otf)$`. Use one backslash in the Cloudflare dashboard, not `\\.`.
 - `ORIGIN_URL`: add this only if Honeylog support tells you to set it.
 
 Add these as secrets:
@@ -75,10 +77,12 @@ example.com/*
 - Cloudflare asks for GitHub or GitLab: go back to **Workers & Pages** and create the Worker manually with the dashboard steps above.
 - Honeylog shows no events: check that the Cloudflare route is active and that `HONEYLOG_SITE_DOMAIN` matches the site in Honeylog.
 - Your site shows Honeylog API responses: remove `ORIGIN_URL`, or set it to your website origin instead of the Honeylog API URL.
+- A Honeylog value is missing or invalid: the Worker still serves the site and disables tracking until the value is fixed.
 
 ## Files
 
 - `worker.js`: Worker code
+- `worker.test.js`: local tests for the Worker behavior
 - `wrangler.jsonc`: Worker configuration
 - `.dev.vars.example`: local secret placeholders
 - `package.json`: Cloudflare setup text

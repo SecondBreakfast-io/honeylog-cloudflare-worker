@@ -6,30 +6,37 @@
  * Required secrets/env:
  * - HONEYLOG_API_URL
  * - HONEYLOG_INGESTION_SECRET
+ * - HONEYLOG_SITE_DOMAIN
  *
  * Optional:
  * - ORIGIN_URL (optional override upstream origin, example: "https://origin.example.com")
  * - HONEYLOG_API_KEY
- * - HONEYLOG_SITE_DOMAIN
  * - HONEYLOG_SITE_SCHEME (default: "https")
  * - HONEYLOG_EVENT_NAME (default: "pageview")
- * - HONEYLOG_SKIP_PATH_REGEX (example: "\\.(?:css|js|png|jpg|svg|ico)$")
+ * - HONEYLOG_SKIP_PATH_REGEX (default: "\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|otf)$")
  */
 
 const textEncoder = new TextEncoder();
+const DEFAULT_SKIP_PATH_REGEX = "\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|otf)$";
 
 export default {
   async fetch(request, env, ctx) {
-    validateRequiredEnv(env);
-
     const incomingUrl = new URL(request.url);
-    const skipRegex = compileRegex(env.HONEYLOG_SKIP_PATH_REGEX);
+    const missingEnv = findMissingRequiredEnv(env);
+    const skipRegex = compileRegex(env.HONEYLOG_SKIP_PATH_REGEX || DEFAULT_SKIP_PATH_REGEX);
     const shouldTrack = !skipRegex || !skipRegex.test(incomingUrl.pathname);
     const startedAt = Date.now();
 
     const response = await fetch(
       resolveUpstreamRequest(request, incomingUrl, env.ORIGIN_URL, env.HONEYLOG_API_URL),
     );
+
+    if (missingEnv.length > 0) {
+      console.error(
+        `Honeylog tracking disabled: missing required environment variable(s): ${missingEnv.join(", ")}`,
+      );
+      return response;
+    }
 
     if (!shouldTrack) {
       return response;
@@ -40,13 +47,14 @@ export default {
   },
 };
 
-function validateRequiredEnv(env) {
-  const required = ["HONEYLOG_API_URL", "HONEYLOG_INGESTION_SECRET"];
-  for (const key of required) {
-    if (!env[key] || String(env[key]).trim() === "") {
-      throw new Error(`Missing required environment variable: ${key}`);
-    }
-  }
+function findMissingRequiredEnv(env) {
+  const required = [
+    "HONEYLOG_API_URL",
+    "HONEYLOG_INGESTION_SECRET",
+    "HONEYLOG_SITE_DOMAIN",
+  ];
+
+  return required.filter((key) => !env[key] || String(env[key]).trim() === "");
 }
 
 function resolveUpstreamRequest(request, incomingUrl, originUrlRaw, honeylogApiUrlRaw) {
@@ -81,14 +89,15 @@ function rewriteToOrigin(incomingUrl, originUrlRaw) {
 
 function buildEvent(request, response, env, startedAtMs) {
   const requestUrl = new URL(request.url);
-  const siteDomain = sanitizeDomain(env.HONEYLOG_SITE_DOMAIN || requestUrl.hostname);
+  const requestHost = normalizeRequestHost(requestUrl.host) || sanitizeDomain(requestUrl.hostname);
+  const siteDomain = sanitizeDomain(env.HONEYLOG_SITE_DOMAIN);
   const siteScheme = String(env.HONEYLOG_SITE_SCHEME || "https").toLowerCase();
   const eventName = String(env.HONEYLOG_EVENT_NAME || "pageview");
 
   const event = {
     n: eventName,
     d: siteDomain,
-    u: `${siteScheme}://${siteDomain}${requestUrl.pathname}${requestUrl.search}`,
+    u: `${siteScheme}://${requestHost || siteDomain}${requestUrl.pathname}${requestUrl.search}`,
     method: request.method.toUpperCase(),
     status_code: response.status,
     timestamp: new Date().toISOString(),
@@ -104,9 +113,9 @@ function buildEvent(request, response, env, startedAtMs) {
     event.ua = userAgent;
   }
 
-  const acceptLanguage = request.headers.get("accept-language");
-  if (acceptLanguage) {
-    event.headers = { "accept-language": acceptLanguage };
+  const trackedHeaders = buildTrackedRequestHeaders(request);
+  if (Object.keys(trackedHeaders).length > 0) {
+    event.headers = trackedHeaders;
   }
 
   const ip = extractClientIp(request);
@@ -130,6 +139,30 @@ function buildEvent(request, response, env, startedAtMs) {
   }
 
   return event;
+}
+
+function buildTrackedRequestHeaders(request) {
+  const headerNames = [
+    "accept-language",
+    "sec-fetch-dest",
+    "sec-fetch-mode",
+    "sec-fetch-site",
+    "sec-fetch-user",
+    "sec-purpose",
+    "purpose",
+    "x-moz",
+    "sec-speculation-tags",
+  ];
+  const headers = {};
+
+  for (const name of headerNames) {
+    const value = request.headers.get(name);
+    if (value) {
+      headers[name] = value;
+    }
+  }
+
+  return headers;
 }
 
 function trackResponseBodyAndSend(response, event, env, ctx, startedAtMs, requestMethod) {
@@ -196,7 +229,7 @@ function updateResponseTime(event, startedAtMs) {
 }
 
 function scheduleHoneylogSend(event, env, ctx) {
-  const task = sendBatchToHoneylog([event], env).catch((err) => {
+  const task = sendEventToHoneylog(event, env).catch((err) => {
     console.error("Honeylog send failed:", err);
   });
   if (ctx && typeof ctx.waitUntil === "function") {
@@ -207,9 +240,9 @@ function scheduleHoneylogSend(event, env, ctx) {
   }
 }
 
-async function sendBatchToHoneylog(events, env) {
-  const siteDomain = sanitizeDomain(env.HONEYLOG_SITE_DOMAIN || extractHost(events));
-  const body = JSON.stringify({ events });
+async function sendEventToHoneylog(event, env) {
+  const siteDomain = sanitizeDomain(env.HONEYLOG_SITE_DOMAIN);
+  const body = JSON.stringify({ events: [event] });
   const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = await buildSignature(timestamp, body, env.HONEYLOG_INGESTION_SECRET);
 
@@ -234,14 +267,6 @@ async function sendBatchToHoneylog(events, env) {
   if (!response.ok) {
     throw new Error(`Honeylog returned HTTP ${response.status}`);
   }
-}
-
-function extractHost(events) {
-  const first = events[0];
-  if (!first || !first.u) {
-    throw new Error("Unable to resolve site domain from event payload");
-  }
-  return new URL(first.u).hostname;
 }
 
 async function buildSignature(timestamp, body, secret) {
@@ -271,6 +296,19 @@ function sanitizeDomain(domain) {
     .trim()
     .toLowerCase()
     .replace(/^www\./, "");
+}
+
+function normalizeRequestHost(host) {
+  const normalized = String(host || "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+
+  try {
+    return new URL(`https://${normalized}`).host;
+  } catch (_err) {
+    return "";
+  }
 }
 
 function toPositiveInt(value) {

@@ -1,7 +1,11 @@
 {
   "name": "honeylog-cloudflare-worker",
   "private": true,
+  "type": "module",
   "description": "Send Honeylog pageview events from a Cloudflare site.",
+  "scripts": {
+    "test": "node --test worker.test.js"
+  },
   "cloudflare": {
     "bindings": {
       "HONEYLOG_API_URL": {

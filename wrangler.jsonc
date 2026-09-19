@@ -9,6 +9,6 @@
     "HONEYLOG_SITE_DOMAIN": "example.com",
     "HONEYLOG_SITE_SCHEME": "https",
     "HONEYLOG_EVENT_NAME": "pageview",
-    "HONEYLOG_SKIP_PATH_REGEX": "\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf)$"
+    "HONEYLOG_SKIP_PATH_REGEX": "\\.(?:css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|otf)$"
   }
 }
