@@ -229,7 +229,7 @@ function updateResponseTime(event, startedAtMs) {
 }
 
 function scheduleHoneylogSend(event, env, ctx) {
-  const task = sendEventToHoneylog(event, env).catch((err) => {
+  const task = sendBatchToHoneylog([event], env).catch((err) => {
     console.error("Honeylog send failed:", err);
   });
   if (ctx && typeof ctx.waitUntil === "function") {
@@ -240,9 +240,9 @@ function scheduleHoneylogSend(event, env, ctx) {
   }
 }
 
-async function sendEventToHoneylog(event, env) {
+async function sendBatchToHoneylog(events, env) {
   const siteDomain = sanitizeDomain(env.HONEYLOG_SITE_DOMAIN);
-  const body = JSON.stringify({ events: [event] });
+  const body = JSON.stringify({ events });
   const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = await buildSignature(timestamp, body, env.HONEYLOG_INGESTION_SECRET);
 
